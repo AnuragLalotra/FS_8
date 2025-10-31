@@ -1,0 +1,90 @@
+1. Install dependencies
+
+npm install express jsonwebtoken
+
+2. Core backend implementation
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const app = express();
+
+app.use(express.json());
+
+const SECRET_KEY = "super_secret_key";
+
+// Dummy database
+const users = [
+  { id: 1, username: "adminUser", password: "admin123", role: "Admin" },
+  { id: 2, username: "modUser", password: "mod123", role: "Moderator" },
+  { id: 3, username: "profileUser", password: "user123", role: "User" }
+];
+
+// Issue JWT (login)
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(
+    (u) => u.username === username && u.password === password
+  );
+  if (!user) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
+  const payload = {
+    id: user.id,
+    username: user.username,
+    role: user.role
+  };
+  const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "1h" });
+  res.json({ token });
+});
+
+// JWT authentication middleware
+function authenticateJWT(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ message: "Token missing" });
+  const token = authHeader.split(' ')[1];
+  jwt.verify(token, SECRET_KEY, (err, decoded) => {
+    if (err) return res.status(403).json({ message: "Invalid token" });
+    req.user = decoded;
+    next();
+  });
+}
+
+// Role-check middleware
+function authorizeRoles(...allowed) {
+  return (req, res, next) => {
+    if (!allowed.includes(req.user.role)) {
+      return res
+        .status(403)
+        .json({ message: "Access denied: insufficient role" });
+    }
+    next();
+  };
+}
+
+// Admin-only dashboard
+app.get('/admin-dashboard', authenticateJWT, authorizeRoles("Admin"), (req, res) => {
+  res.json({
+    message: "Welcome to the Admin dashboard",
+    user: req.user
+  });
+});
+
+// Moderator management route
+app.get('/moderator-panel', authenticateJWT, authorizeRoles("Moderator"), (req, res) => {
+  res.json({
+    message: "Welcome to the Moderator panel",
+    user: req.user
+  });
+});
+
+// User profile route
+app.get('/user-profile', authenticateJWT, authorizeRoles("Admin", "User"), (req, res) => {
+  res.json({
+    message: `Welcome to your profile, ${req.user.username}`,
+    user: req.user
+  });
+});
+
+app.listen(3000, () => {
+  console.log("Server started on port 3000");
+});
